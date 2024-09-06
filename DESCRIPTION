@@ -1,7 +1,7 @@
 Type: Package
 Package: pedFamilias
 Title: Import and Export 'Familias' Files
-Version: 0.2.2
+Version: 0.2.4
 Authors@R: 
     person("Magnus Dehli", "Vigeland", , "m.d.vigeland@medisin.uio.no", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-9134-4962"))
@@ -19,11 +19,11 @@ Imports: pedmut
 Suggests: testthat
 Encoding: UTF-8
 Language: en-GB
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.2
 NeedsCompilation: no
-Packaged: 2024-04-03 13:30:02 UTC; magnu
+Packaged: 2024-09-06 08:52:56 UTC; magnu
 Author: Magnus Dehli Vigeland [aut, cre]
     (<https://orcid.org/0000-0002-9134-4962>)
 Maintainer: Magnus Dehli Vigeland <m.d.vigeland@medisin.uio.no>
 Repository: CRAN
-Date/Publication: 2024-04-03 13:53:00 UTC
+Date/Publication: 2024-09-06 15:40:02 UTC

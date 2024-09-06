@@ -1,11 +1,11 @@
-#' Read Familias .fam files
+#' Read Familias `.fam` files
 #'
-#' Parses the content of a .fam file exported from Familias, and converts it
+#' Parses the content of a `.fam` file exported from Familias, and converts it
 #' into suitable `ped` objects. This function does not depend on the `Familias`
 #' R package.
 #'
-#' @param famfile Path to a .fam file.
-#' @param useDVI A logical, indicating if the DVI section of the .fam file
+#' @param famfile Path (or URL) to a `.fam` file.
+#' @param useDVI A logical, indicating if the DVI section of the `.fam` file
 #'   should be identified and parsed. If `NA` (the default), the DVI section is
 #'   included if it is present in the input file.
 #' @param Xchrom A logical. If TRUE, the `chrom` attribute of all markers will
@@ -30,7 +30,7 @@
 #'
 #'   * If the input file only contains a database, the output is a list of
 #'   information (name, alleles, frequencies, mutation model) about each locus.
-#'   This list can be used as `locusAttributes` in e.g. [setMarkers()].
+#'   This list can be used as `locusAttributes` in e.g. [pedtools::setMarkers()].
 #'
 #'   * If the input file describes pedigree data, the output is a list of `ped`
 #'   objects. If there is only one pedigree, and `simplify1 = TRUE`, the output
@@ -84,11 +84,13 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
                    fallbackModel = c("equal", "proportional"), simplify1 = TRUE,
                    deduplicate = TRUE, includeParams = FALSE, verbose = TRUE) {
 
-  if(!file.exists(famfile))
-    stop2("File not found: ", famfile)
-
   if(!endsWith(famfile, ".fam"))
     stop2("Input file must end with '.fam': ", famfile)
+
+  if(any(startsWith(famfile, c("http", "ftp", "www"))) && verbose)
+    cat("Reading from URL:", famfile, "\n")
+  else if(!file.exists(famfile))
+    stop2("File not found: ", famfile)
 
   # Read entire file
   raw = readLines(famfile)
