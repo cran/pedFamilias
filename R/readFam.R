@@ -21,6 +21,9 @@
 #' @param includeParams A logical indicating if various parameters should be
 #'   read and returned in a separate list. See Value for details. Default:
 #'   FALSE.
+#' @param convert A logical. If FALSE, return the parsed pedigrees,
+#'   genotype data and loci without conversion to pedsuite objects. Default:
+#'   TRUE.
 #' @param verbose A logical. If TRUE, various information is written to the
 #'   screen during the parsing process.
 #'
@@ -78,22 +81,35 @@
 #'
 #' stopifnot(identical(x$main, peds))
 #'
+#' # Return elements without full conversion to pedsuite
+#' dat = readFam(fam, convert = FALSE)
+#' dat$datamatrix
+#'
+#' y = Familias2ped(dat$pedigrees, dat$datamatrix, dat$loci)
+#' stopifnot(identical(y, peds))
+#'
 #' @importFrom pedmut mutationMatrix
 #' @export
 readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
                    fallbackModel = c("equal", "proportional"), simplify1 = TRUE,
-                   deduplicate = TRUE, includeParams = FALSE, verbose = TRUE) {
+                   deduplicate = TRUE, includeParams = FALSE, convert = TRUE,
+                   verbose = TRUE) {
 
   if(!endsWith(famfile, ".fam"))
     stop2("Input file must end with '.fam': ", famfile)
 
-  if(any(startsWith(famfile, c("http", "ftp", "www"))) && verbose)
+  isUrl = any(startsWith(famfile, c("http", "ftp", "www")))
+  if(isUrl && verbose)
     cat("Reading from URL:", famfile, "\n")
-  else if(!file.exists(famfile))
+  if(!isUrl && !file.exists(famfile))
     stop2("File not found: ", famfile)
 
   # Read entire file
   raw = readLines(famfile)
+
+  if("[Familial searching]" %in% raw)
+    stop2("Files made with the 'Familial searching' module are not supported by `readFam()`")
+
   x = gsub("\\\"", "", raw)
 
   # Utility function for checking integer values
@@ -104,7 +120,7 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
     j
   }
 
-  # Initialise storage for extra info, if indicated
+  # Initialise storage for extra info, if needed
   params = if(includeParams) list() else NULL
 
   # Read and print Familias version
@@ -115,7 +131,7 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
 
   if(is.na(useDVI))
     useDVI = "[DVI]" %in% x
-  else if(useDVI && !"[DVI]" %in% x)
+  else if(useDVI && "[DVI]" %notin% x)
     stop2("No DVI section found in input file")
 
   if(verbose)
@@ -271,7 +287,7 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
   fallbackModel = match.arg(fallbackModel)
 
   # Theta?
-  patt = "(?<=Theta/Kinship/Fst: )[\\.\\d]+"
+  patt = "(?<=Theta/Kinship/Fst: )[-+0-9.eE]+"
   theta = safeNum(regmatches(x[ped.line], regexpr(patt, x[ped.line], perl = TRUE)))
   if(includeParams)
     params$theta = theta
@@ -338,7 +354,7 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
 
     # Second part II: Dropout value per marker
     if(includeParams) {
-      patt2 = "(?<=Dropout probability = )[\\.\\d]+"
+      patt2 = "(?<=Dropout probability = )[-+0-9.eE]+"
       drVal = safeNum(regmatches(mInfo[[2]], regexpr(patt2, mInfo[[2]], perl = TRUE)))
       if(length(drVal))
         params$dropoutValue = c(params$dropoutValue, setnames(drVal, loc.name))
@@ -346,7 +362,7 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
 
     # Second part III: Minor allele frequency
     if(includeParams) {
-      patt3 = "(?<=Minor allele frequency = )[\\.\\d]+"
+      patt3 = "(?<=Minor allele frequency = )[-+0-9.eE]+"
       thismaf = safeNum(regmatches(mInfo[[2]], regexpr(patt3, mInfo[[2]], perl = TRUE)))
       if(length(thismaf))
         params$maf = c(params$maf, setnames(thismaf, loc.name))
@@ -405,7 +421,7 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
                                   rate = mutrate.fem, rate2 = mutrate2.fem, range = range.fem)
 
     if(names(maleMod) == "step-stationary") {
-      maleMutMat = tryCatch(pedmut::stabilize(maleMutMat, method = "PM"),
+      maleMutMat = tryCatch(pedmut::makeStationary(maleMutMat, method = "PM"),
         error = function(e) {
           warning(sprintf("Database error, locus %s: Cannot stabilize mutation matrix. Changed to '%s' model.",
                           loc.name, fallbackModel), call. = FALSE)
@@ -416,7 +432,7 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
     }
 
     if(names(femaleMod) == "step-stationary") {
-      femaleMutMat = tryCatch(pedmut::stabilize(femaleMutMat, method = "PM"),
+      femaleMutMat = tryCatch(pedmut::makeStationary(femaleMutMat, method = "PM"),
         error = function(e) mutationMatrix(model = fallbackModel, alleles = als, afreq = frqs, rate = mutrate.fem))
       if(pedmut::getParams(femaleMutMat, "model") == fallbackModel)
          femaleMod = models[models == fallbackModel]
@@ -473,6 +489,13 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
     if(verbose)
       cat("*** Finished DVI section ***\n\n")
 
+    if(!convert) {
+      res = list(dviComponents = dvi.families, loci = loci)
+      if(includeParams)
+        res$params = params
+      return(res)
+    }
+
     if(verbose)
       cat("Converting to `ped` format\n")
     res = lapply(dvi.families, function(fam) {
@@ -528,7 +551,15 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
     }
   }
 
-  # Return
+
+  if(!convert) {
+      res = list(pedigrees = pedigrees, datamatrix = datamatrix, loci = loci)
+      if(includeParams)
+        res$params = params
+      return(res)
+    }
+
+  # Convert to peds
   if(!is.null(pedigrees)) {
     if(verbose)
       cat("\nConverting to `ped` format\n")

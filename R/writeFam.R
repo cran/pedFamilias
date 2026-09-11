@@ -130,17 +130,45 @@ writeFam = function(..., famfile = "ped.fam", params = NULL, dbOnly = FALSE,
                   class(peds[[idx]])))
   }
 
+  # Flatten components and check marker names
+  pnms = names(peds)
+  ncomp = lengths(peds)
+  flat = unlist(peds, recursive = FALSE, use.names = FALSE)
+
+  MARKERS = unique.default(unlist(lapply(flat, name)))
+  if(anyNA(MARKERS) || any(!nzchar(MARKERS)))
+    stop2("All markers must have names")
+
+  # Harmonise marker order and attributes
+  flat = harmoniseMarkers(flat, verbose = FALSE)
+  peds = split(flat, rep(seq_along(peds), ncomp))
+  names(peds) = pnms
+
   # All unique individual names
   LABS = unique.default(unlist(lapply(peds, labels)))
   nind = length(LABS)
-
-  # All unique marker names
-  MARKERS = unique.default(unlist(lapply(peds, name)))
   nmar = length(MARKERS)
 
+  # Check repeated individuals
+  labs = unlist(lapply(flat, labels), use.names = FALSE)
+  for(id in unique(labs[duplicated(labs)])) {
+    cmp = flat[vapply(flat, function(x) id %in% labels(x), logical(1))]
+    sx = vapply(cmp, getSex, numeric(1), id = id)
+    gx = lapply(cmp, getAlleles, ids = id)
+
+    if(!all(sx == sx[1]))
+      stop2("Conflicting sex for repeated ID: ", id)
+    if(!all(vapply(gx[-1], identical, logical(1), gx[[1]])))
+      stop2("Conflicting genotypes for repeated ID: ", id)
+  }
+
   # Extra param: Dropout
-  dropoutConsider = params$dropoutConsider %||% setnames(rep_len(FALSE, nind), LABS)
-  dropoutValue    = params$dropoutValue %||% setnames(rep_len(0, nmar), MARKERS)
+  dropoutConsider = params$dropoutConsider %||% FALSE
+  dropoutValue = params$dropoutValue %||% 0
+  if(length(dropoutConsider) == 1)
+    dropoutConsider = setnames(rep_len(dropoutConsider, nind), LABS)
+  if(length(dropoutValue) == 1)
+    dropoutValue = setnames(rep_len(dropoutValue, nmar), MARKERS)
 
   # If shortcut "dropout" is used, overrule the others
   if(!is.null(dropoutInd <- params[["dropout"]])) {
@@ -150,12 +178,12 @@ writeFam = function(..., famfile = "ped.fam", params = NULL, dbOnly = FALSE,
       stop2("All nonzero dropout values must be equal: ", sort(udr))
 
     # Override dropoutValue
-    dropoutValue[] = max(udr)
+    dropoutValue[] = max(udr, 0)
 
     # Override params$dropoutConsider
     if(!is.null(dnms <- names(dropoutInd))) {
-      if(!all(dnms %in% LABS))
-        stop2("Unknown ID in `dropout`: ", setdiff(dnms, LABS))
+      if(anyNA(match(dnms, LABS)))
+        stop2("Unknown ID in `dropout`: ", .mysetdiff(dnms, LABS))
       dropoutConsider[] = FALSE
       dropoutConsider[dnms] = dropoutInd > 0
     }
@@ -300,7 +328,10 @@ writeFam = function(..., famfile = "ped.fam", params = NULL, dbOnly = FALSE,
     else
       mut = data.frame(model = c("equal", "equal"), rate = 0, range = 0, rate2 = 0)
 
-    mod = match(mut$model, c("equal", "proportional", "stepwise"), nomatch = 1L)
+    mod = match(mut$model, c("equal", "proportional", "stepwise"))
+    if(anyNA(mod))
+      stop2("Unsupported mutation model for marker '", mname, "': ", unique(mut$model[is.na(mod)]))
+
     mod[mod == 3 & !is.na(mut$rate2)] = 5
 
     nals = length(attrs$alleles)

@@ -38,6 +38,9 @@ rst = function(v, digits = 3)
   if(is.null(x)) y else x
 }
 
+`%notin%` = function(x, table)
+  match(x, table, nomatch = 0L) == 0L
+
 pluralise = function(noun, n) {
   if(n == 1) noun else sprintf("%ss", noun)
 }
@@ -56,6 +59,9 @@ setnames = function(x, nms) {
   y[match(x, y, 0L)]
 }
 
+.mysetequal = function(x, y) {
+  !anyNA(match(x, y)) && !anyNA(match(y, x))
+}
 
 ftime = function(st, digits = 3) {
   format(Sys.time() - st, digits = digits)
