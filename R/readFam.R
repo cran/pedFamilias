@@ -96,7 +96,7 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
                    verbose = TRUE) {
 
   if(!endsWith(famfile, ".fam"))
-    stop2("Input file must end with '.fam': ", famfile)
+    stop2("Input file must end with .fam: ", famfile)
 
   isUrl = any(startsWith(famfile, c("http", "ftp", "www")))
   if(isUrl && verbose)
@@ -106,6 +106,12 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
 
   # Read entire file
   raw = readLines(famfile)
+
+  # Convert to UTF-8 if needed
+  if(!all(validUTF8(raw))) {
+    cat("Input file is not valid UTF-8. Attempting to convert\n")
+    raw = iconv(raw, from = "latin1", to = "UTF-8")
+  }
 
   if("[Familial searching]" %in% raw)
     stop2("Files made with the 'Familial searching' module are not supported by `readFam()`")
@@ -498,9 +504,18 @@ readFam = function(famfile, useDVI = NA, Xchrom = FALSE, prefixAdded = "added_",
 
     if(verbose)
       cat("Converting to `ped` format\n")
+
+    locAttrs = readFamiliasLoci(loci)
+
     res = lapply(dvi.families, function(fam) {
-      Familias2ped(familiasped = fam$pedigrees, datamatrix = fam$datamatrix,
-                   loci = loci, matchLoci = TRUE, prefixAdded = prefixAdded)
+      p = Familias2ped(familiasped = fam$pedigrees, datamatrix = fam$datamatrix,
+                       loci = loci, locusAttributes = locAttrs, matchLoci = TRUE,
+                       prefixAdded = prefixAdded)
+
+      # TODO: Remove after dvir 3.5.1 is on CRAN
+      if(!is.ped(p) && "Reference pedigree" %in% names(p))
+        p = lapply(p, function(z) if(is.ped(z)) list(z) else z)
+      p
     })
 
     # Set all chrom attributes to X if indicated
@@ -599,7 +614,8 @@ asFamiliasPedigree = function(id, findex, mindex, sex) {
     return(NULL)
 
   if(is.numeric(sex))
-    sex = ifelse(sex == 1, "male", "female")
+    sex = c("unknown", "male", "female")[sex + 1]
+
 
   x = list(id = id, findex = findex, mindex = mindex, sex = sex)
   class(x) = "FamiliasPedigree"
@@ -755,14 +771,27 @@ parseFamily = function(x, deduplicate, verbose = TRUE) {
 
     # Data frame of parent-child pairs
     parent.tags = which(tags == "Parent")
-    po = data.frame(parent = vals[parent.tags], child = vals[parent.tags + 1],
-                    stringsAsFactors = FALSE)
+    po = list2DF(list(parent = vals[parent.tags], child = vals[parent.tags + 1]))
 
     # Add extra individuals if needed (e.g. "Missing person")
-    extras <- setdiff(c(po$parent, po$child), id)
+    extras = setdiff(c(po$parent, po$child), id)
+    extraSex = integer(length(extras))
+
+    # Familias stores the sex of "Missing person" in an unused auxiliary person
+    if("Missing person" %in% extras) {
+      unused = setdiff(id, c(po$parent, po$child))
+      proxy = grep("^Missing (male|female) [0-9]+$", unused, value = TRUE)
+      if(length(proxy) == 1) {
+        extraSex[extras == "Missing person"] = sex[match(proxy, id)]
+        keep = this.id != proxy
+        this.id = this.id[keep]
+        this.sex = this.sex[keep]
+      }
+    }
+
     if(length(extras)) {
       this.id = c(this.id, extras)
-      this.sex = c(this.sex, rep(0L, length(extras)))
+      this.sex = c(this.sex, extraSex)
     }
 
     names(this.sex) = this.id
